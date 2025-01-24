@@ -74,28 +74,6 @@ jobs:
       run: |
         docker push palanipsb/FullStack-Blogging-App:latest
 
-    - name: Azure/k8s-set-context@v3.0
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-        cluster-name: ${{ env.CLUSTER_NAME }}
-        resource-group: ${{ env.RESOURCE_GROUP }
 
-    - name: Create secret in Kubernetes cluster
-      uses: Azure/k8s-create-secret@v4.0
-      with:
-        container-registry-url: https://index.docker.io/v2/
-        container-registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
-        container-registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
-        secret-type: docker-registry
-        secret-name: docker-image-pull-secret
-
-    - name: Deploy to Kubernetes cluster
-      uses: Azure/k8s-deploy@v4.9
-      with:
-        maniests:
-          deployment-service.yml
-        images: palanipsb/FullStack-Blogging-App:latest
-        imagepullsecrets: docker-image-pull-secret
-        action: deploy
         
         
