@@ -9,6 +9,10 @@ jobs:
 
     runs-on: self-hosted
 
+    env:
+      CLUSTER_NAME: aks-cicd-poc
+      CLUSTER_GROUP: RG_CICD_POC
+      
     steps:
     - uses: actions/checkout@v4
     - name: Set up JDK 17
@@ -19,3 +23,79 @@ jobs:
         cache: maven
     - name: Build with Maven
       run: mvn package --file pom.xml
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: my-artifact
+        path: tag=rget/*.jar
+        
+    - name: Trivy FS Scan
+      run: |
+          trivy fs --format table -o trivy-fs-reopen.html .
+
+    - name: SonarQube Scan
+      uses: sonarsource/sonarqube-scan-action@master
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+    - name: install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
+      
+    - name: SonarQube Quality Gate check
+      id: sonar-quality-gate-check
+      uses: sonarsource/sonarqube-quality-gate-action@master
+      # Force to fail step after specific time.
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker Image
+      run: |
+        docker build -t palanipsb/FullStack-Blogging-App:latest .
+        
+    - name: Trivy Image Scan
+      run: |
+        trivy image --format table -o trivy-image-report.html palanipsb/FullStack-Blogging-App:latest
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Push Docker Image
+      run: |
+        docker push palanipsb/FullStack-Blogging-App:latest
+
+    - name: Azure/k8s-set-context@v3.0
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        cluster-name: ${{ env.CLUSTER_NAME }}
+        resource-group: ${{ env.RESOURCE_GROUP }
+
+    - name: Create secret in Kubernetes cluster
+      uses: Azure/k8s-create-secret@v4.0
+      with:
+        container-registry-url: https://index.docker.io/v2/
+        container-registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
+        container-registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
+        secret-type: docker-registry
+        secret-name: docker-image-pull-secret
+
+    - name: Deploy to Kubernetes cluster
+      uses: Azure/k8s-deploy@v4.9
+      with:
+        maniests:
+          deployment-service.yml
+        images: palanipsb/FullStack-Blogging-App:latest
+        imagepullsecrets: docker-image-pull-secret
+        action: deploy
+        
+        
